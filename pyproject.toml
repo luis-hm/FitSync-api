@@ -1,0 +1,32 @@
+[project]
+name = "fitsync-api"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "luishm",email = "luisfelipeholanda12@gmail.com"}
+]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "django (>=6.0.5,<7.0.0)",
+    "djangorestframework (>=3.17.1,<4.0.0)",
+    "djangorestframework-simplejwt (>=5.5.1,<6.0.0)",
+    "psycopg[binary] (>=3.3.4,<4.0.0)",
+    "daphne (>=4.2.1,<5.0.0)",
+    "django-environ (>=0.13.0,<0.14.0)",
+    "django-cors-headers (>=4.9.0,<5.0.0)",
+    "drf-spectacular (>=0.29.0,<0.30.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "honcho (>=2.0.0,<3.0.0)"
+]
+
+
+[tool.poetry]
+package-mode = false
