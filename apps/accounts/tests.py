@@ -8,7 +8,8 @@ from django.utils.http import urlsafe_base64_encode
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import Aluno
+from apps.accounts.models import Aluno, PersonalProfile
+from apps.core.models import PlatformSettings
 
 
 Usuario = get_user_model()
@@ -307,6 +308,99 @@ class AccountsAuthAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("tipo", response.data)
+
+    def test_admin_updates_student_extended_profile(self):
+        admin = Usuario.objects.create_superuser(
+            nome="Admin",
+            email="admin.aluno.detail@example.com",
+            password="StrongPass123!",
+        )
+        personal = self.create_personal()
+        other_personal = self.create_personal(email="novo.personal@example.com")
+        student = self.create_student(personal)
+        self.client.force_authenticate(user=admin)
+
+        response = self.client.patch(
+            f"/api/accounts/admin/alunos/{student.id}/",
+            {
+                "nome": "Aluno Admin",
+                "email": "aluno.admin@example.com",
+                "personal_id": str(other_personal.id),
+                "objetivo_principal": "Emagrecimento",
+                "observacoes_medicas": "Acompanhamento semanal",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        student.refresh_from_db()
+        student.usuario.refresh_from_db()
+        self.assertEqual(student.usuario.nome, "Aluno Admin")
+        self.assertEqual(student.usuario.email, "aluno.admin@example.com")
+        self.assertEqual(student.personal_id, other_personal.id)
+        self.assertEqual(student.objetivo_principal, "Emagrecimento")
+
+    def test_admin_lists_personal_metrics_and_updates_profile(self):
+        admin = Usuario.objects.create_superuser(
+            nome="Admin",
+            email="admin.personal.metrics@example.com",
+            password="StrongPass123!",
+        )
+        personal = self.create_personal()
+        self.create_student(personal)
+        self.client.force_authenticate(user=admin)
+
+        list_response = self.client.get("/api/accounts/admin/personais/")
+        detail_response = self.client.patch(
+            f"/api/accounts/admin/personais/{personal.id}/",
+            {
+                "especialidade": "Musculacao",
+                "bio": "Atendimento para hipertrofia.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data["results"][0]["alunos_count"], 1)
+        self.assertIn("avaliacoes_30d_count", list_response.data["results"][0])
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["especialidade"], "Musculacao")
+        self.assertTrue(PersonalProfile.objects.filter(usuario=personal).exists())
+
+    def test_admin_dashboard_returns_counts(self):
+        admin = Usuario.objects.create_superuser(
+            nome="Admin",
+            email="admin.dashboard@example.com",
+            password="StrongPass123!",
+        )
+        personal = self.create_personal()
+        self.create_student(personal)
+        self.client.force_authenticate(user=admin)
+
+        response = self.client.get("/api/accounts/admin/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["personais"]["total"], 1)
+        self.assertEqual(response.data["alunos"]["total"], 1)
+        self.assertIn("exercicios", response.data)
+
+    def test_register_is_blocked_when_public_signup_is_disabled(self):
+        PlatformSettings.get_solo()
+        PlatformSettings.objects.update(cadastro_publico_ativo=False)
+
+        response = self.client.post(
+            "/api/auth/register/",
+            {
+                "nome": "Personal Bloqueado",
+                "email": "personal.bloqueado@example.com",
+                "password": "StrongPass123!",
+                "password_confirm": "StrongPass123!",
+                "tipo": Usuario.Tipo.PERSONAL,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_personal_lists_only_own_students(self):
         personal = self.create_personal()

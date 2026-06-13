@@ -79,6 +79,15 @@ poetry run python manage.py spectacular --fail-on-warn
 poetry run python manage.py test
 ```
 
+Importacao automatizada do catalogo de exercicios via wger:
+
+```bash
+poetry run python manage.py import_wger
+```
+
+Por padrao, os exercicios importados entram como `status=PENDENTE` e `ativo=False`.
+O admin revisa e aprova antes de liberar para personais e alunos.
+
 ## Variaveis De Ambiente
 
 ### Django
@@ -335,7 +344,11 @@ await fetch(`${API_BASE_URL}/api/auth/logout/`, {
 - `GET /api/workouts/exercicios/`
 - `POST /api/workouts/exercicios/`
 - `PATCH /api/workouts/exercicios/{id}/`
+- `POST /api/workouts/exercicios/{id}/aprovar/`
 - `POST /api/workouts/exercicios/{id}/arquivar/`
+- `POST /api/workouts/exercicios/{id}/rejeitar/`
+- `POST /api/workouts/exercicios/aprovar-lote/`
+- `POST /api/workouts/exercicios/rejeitar-lote/`
 - `GET /api/workouts/templates/`
 - `POST /api/workouts/templates/`
 - `PATCH /api/workouts/templates/{id}/`

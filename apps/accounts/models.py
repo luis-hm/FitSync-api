@@ -20,6 +20,8 @@ class UsuarioManager(BaseUserManager):
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
+        if user.tipo == Usuario.Tipo.PERSONAL:
+            PersonalProfile.objects.get_or_create(usuario=user)
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
@@ -91,6 +93,31 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.nome} <{self.email}>"
+
+
+class PersonalProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="personal_profile",
+    )
+    especialidade = models.CharField(max_length=120, blank=True)
+    bio = models.TextField(blank=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "personal_profile"
+        verbose_name = "perfil de personal"
+        verbose_name_plural = "perfis de personal"
+
+    def clean(self):
+        if self.usuario_id and self.usuario.tipo != self.usuario.Tipo.PERSONAL:
+            raise ValidationError({"usuario": "Perfil precisa estar vinculado a um personal."})
+
+    def __str__(self):
+        return f"Perfil de {self.usuario.nome}"
 
 
 class Aluno(models.Model):
