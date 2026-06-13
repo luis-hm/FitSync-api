@@ -4,17 +4,75 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models.functions import Lower
+from django.utils.text import slugify
 from django.utils import timezone
 
 from apps.accounts.models import Usuario
 
 
+class CategoriaExercicio(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nome = models.CharField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=100, unique=True, blank=True)
+    ativo = models.BooleanField(default=True)
+    ordem = models.PositiveSmallIntegerField(default=0)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "categoria_exercicio"
+        ordering = ["ordem", "nome"]
+        verbose_name = "categoria de exercicio"
+        verbose_name_plural = "categorias de exercicios"
+
+    def __str__(self):
+        return self.nome
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = self.generate_unique_slug(self.nome)
+        super().save(*args, **kwargs)
+
+    def generate_unique_slug(self, value):
+        base_slug = slugify(value)[:80] or "categoria"
+        candidate = base_slug
+        suffix = 2
+        while CategoriaExercicio.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+            candidate = f"{base_slug}-{suffix}"[:100]
+            suffix += 1
+        return candidate
+
+
 class Exercicio(models.Model):
+    class Status(models.TextChoices):
+        PENDENTE = "PENDENTE", "Pendente"
+        APROVADO = "APROVADO", "Aprovado"
+        REJEITADO = "REJEITADO", "Rejeitado"
+
+    class Origem(models.TextChoices):
+        MANUAL = "MANUAL", "Manual"
+        WGER = "WGER", "wger"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nome = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140, unique=True, blank=True)
+    categoria = models.ForeignKey(
+        CategoriaExercicio,
+        on_delete=models.PROTECT,
+        related_name="exercicios",
+        null=True,
+        blank=True,
+    )
     grupo_muscular = models.CharField(max_length=80)
     url_animacao = models.URLField(blank=True)
     instrucoes_gerais = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.APROVADO)
+    origem = models.CharField(max_length=20, choices=Origem.choices, default=Origem.MANUAL)
+    wger_id = models.PositiveIntegerField(null=True, blank=True, unique=True)
+    wger_uuid = models.UUIDField(null=True, blank=True, unique=True)
+    fonte_url = models.URLField(blank=True)
+    licenca_nome = models.CharField(max_length=120, blank=True)
+    licenca_url = models.URLField(blank=True)
+    licenca_autor = models.CharField(max_length=160, blank=True)
     ativo = models.BooleanField(default=True)
     data_criacao = models.DateTimeField(auto_now_add=True)
 
@@ -32,6 +90,22 @@ class Exercicio(models.Model):
 
     def __str__(self):
         return self.nome
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = self.generate_unique_slug(self.nome)
+        if self.categoria_id:
+            self.grupo_muscular = self.categoria.nome
+        super().save(*args, **kwargs)
+
+    def generate_unique_slug(self, value):
+        base_slug = slugify(value)[:120] or "exercicio"
+        candidate = base_slug
+        suffix = 2
+        while Exercicio.objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+            candidate = f"{base_slug}-{suffix}"[:140]
+            suffix += 1
+        return candidate
 
 
 class TreinoTemplate(models.Model):

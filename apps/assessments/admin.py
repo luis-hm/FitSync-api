@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from apps.assessments.models import (
+    Anamnese,
     Avaliacao,
     AvaliacaoBioimpedancia,
     AvaliacaoCircunferencias,
@@ -25,8 +26,18 @@ class AvaliacaoCircunferenciasInline(admin.StackedInline):
 
 @admin.register(Avaliacao)
 class AvaliacaoAdmin(admin.ModelAdmin):
-    list_display = ("aluno", "personal", "metodo", "data_avaliacao", "peso_kg", "percentual_gordura")
-    list_filter = ("metodo", "data_avaliacao")
+    list_display = (
+        "aluno",
+        "personal",
+        "metodo",
+        "data_avaliacao",
+        "data_proxima_avaliacao",
+        "peso_kg",
+        "imc",
+        "percentual_gordura",
+        "ativo",
+    )
+    list_filter = ("metodo", "ativo", "data_avaliacao")
     search_fields = ("aluno__usuario__nome", "aluno__usuario__email", "personal__nome", "personal__email")
     raw_id_fields = ("aluno", "personal")
     inlines = [
@@ -34,3 +45,11 @@ class AvaliacaoAdmin(admin.ModelAdmin):
         AvaliacaoBioimpedanciaInline,
         AvaliacaoCircunferenciasInline,
     ]
+
+
+@admin.register(Anamnese)
+class AnamneseAdmin(admin.ModelAdmin):
+    list_display = ("aluno", "ativo", "data_atualizacao")
+    list_filter = ("ativo",)
+    search_fields = ("aluno__usuario__nome", "aluno__usuario__email")
+    raw_id_fields = ("aluno",)

@@ -1,12 +1,14 @@
 from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework import serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.accounts.models import Aluno, Usuario
+from apps.accounts.permissions import IsAdminRole
 from apps.assessments.models import Avaliacao
-from apps.core.serializers import OptionsSerializer
+from apps.core.models import PlatformSettings
+from apps.core.serializers import OptionsSerializer, PlatformSettingsSerializer
 from apps.workouts.models import Treino
 
 
@@ -39,6 +41,7 @@ def health_check(request):
             "modules": serializers.DictField(child=serializers.CharField()),
             "health": serializers.CharField(),
             "options": serializers.CharField(),
+            "settings": serializers.CharField(),
             "docs": serializers.CharField(),
         },
     ),
@@ -57,6 +60,7 @@ def api_root(request):
             },
             "health": "/api/health/",
             "options": "/api/options/",
+            "settings": "/api/settings/",
             "docs": "/api/docs/",
         }
     )
@@ -81,3 +85,21 @@ def api_options(request):
             "assessments": {"metodos": choice_options(Avaliacao.Metodo.choices)},
         }
     )
+
+
+@extend_schema(
+    tags=["core"],
+    request=PlatformSettingsSerializer,
+    responses={status.HTTP_200_OK: PlatformSettingsSerializer},
+)
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAdminRole])
+def platform_settings(request):
+    settings_obj = PlatformSettings.get_solo()
+    if request.method == "GET":
+        return Response(PlatformSettingsSerializer(settings_obj).data)
+
+    serializer = PlatformSettingsSerializer(settings_obj, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)

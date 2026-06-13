@@ -8,6 +8,8 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APITestCase
 
+from apps.core.models import PlatformSettings
+
 
 Usuario = get_user_model()
 
@@ -135,6 +137,30 @@ class DocumentationAPITests(APITestCase):
             {"value": "DOBRAS", "label": "Dobras"},
             response.data["assessments"]["metodos"],
         )
+
+    def test_admin_can_read_and_update_platform_settings(self):
+        admin = Usuario.objects.create_superuser(
+            nome="Admin",
+            email="admin.settings@example.com",
+            password="StrongPass123!",
+        )
+        self.client.force_authenticate(user=admin)
+
+        get_response = self.client.get("/api/settings/")
+        patch_response = self.client.patch(
+            "/api/settings/",
+            {
+                "nome_plataforma": "FitSync Admin",
+                "suporte_email": "suporte@fitsync.local",
+                "cadastro_publico_ativo": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.data["nome_plataforma"], "FitSync Admin")
+        self.assertFalse(PlatformSettings.get_solo().cadastro_publico_ativo)
 
     def test_schema_generation_is_strictly_valid(self):
         output = StringIO()

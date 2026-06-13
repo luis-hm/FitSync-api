@@ -12,7 +12,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
-from apps.accounts.models import Aluno
+from apps.accounts.models import Aluno, PersonalProfile
 from apps.core.logging_utils import log_security_event
 
 
@@ -167,6 +167,258 @@ class AlunoSerializer(serializers.ModelSerializer):
             "observacoes_medicas",
         ]
         read_only_fields = ["id", "usuario", "personal_id", "personal_nome"]
+
+
+class PersonalAlunoCreateSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(source="usuario.nome", max_length=150)
+    email = serializers.EmailField(source="usuario.email")
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+
+    class Meta:
+        model = Aluno
+        fields = [
+            "id",
+            "nome",
+            "email",
+            "password",
+            "data_nascimento",
+            "sexo",
+            "objetivo_principal",
+            "observacoes_medicas",
+        ]
+        read_only_fields = ["id"]
+
+    def validate_email(self, value):
+        email = Usuario.objects.normalize_email(value).lower()
+        if Usuario.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("Ja existe um usuario com este email.")
+        return email
+
+    @transaction.atomic
+    def create(self, validated_data):
+        usuario_data = validated_data.pop("usuario")
+        password = validated_data.pop("password")
+        user = Usuario.objects.create_user(
+            password=password,
+            tipo=Usuario.Tipo.ALUNO,
+            **usuario_data,
+        )
+        return Aluno.objects.create(
+            usuario=user,
+            personal=self.context["request"].user,
+            **validated_data,
+        )
+
+
+class PersonalAlunoUpdateSerializer(serializers.ModelSerializer):
+    nome = serializers.CharField(source="usuario.nome", max_length=150)
+    email = serializers.EmailField(source="usuario.email", read_only=True)
+    tipo = serializers.CharField(source="usuario.tipo", read_only=True)
+    personal_id = serializers.UUIDField(source="personal.id", read_only=True)
+    personal_nome = serializers.CharField(source="personal.nome", read_only=True)
+
+    class Meta:
+        model = Aluno
+        fields = [
+            "id",
+            "nome",
+            "email",
+            "tipo",
+            "personal_id",
+            "personal_nome",
+            "data_nascimento",
+            "sexo",
+            "objetivo_principal",
+            "observacoes_medicas",
+        ]
+        read_only_fields = ["id", "email", "tipo", "personal_id", "personal_nome"]
+
+    def validate_sexo(self, value):
+        if not self.instance or value == self.instance.sexo:
+            return value
+
+        try:
+            from apps.assessments.models import Avaliacao
+        except ImportError:
+            return value
+
+        if Avaliacao.objects.filter(aluno=self.instance).exists():
+            raise serializers.ValidationError(
+                "Sexo nao pode ser alterado apos o aluno possuir avaliacoes."
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        usuario_data = validated_data.pop("usuario", {})
+        nome = usuario_data.get("nome")
+        if nome is not None:
+            instance.usuario.nome = nome
+            instance.usuario.save(update_fields=["nome"])
+        return super().update(instance, validated_data)
+
+
+class AdminPersonalSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        validators=[validate_password],
+    )
+    especialidade = serializers.CharField(
+        source="personal_profile.especialidade",
+        required=False,
+        allow_blank=True,
+    )
+    bio = serializers.CharField(
+        source="personal_profile.bio",
+        required=False,
+        allow_blank=True,
+    )
+    alunos_count = serializers.IntegerField(read_only=True, default=0)
+    treinos_count = serializers.IntegerField(read_only=True, default=0)
+    avaliacoes_count = serializers.IntegerField(read_only=True, default=0)
+    avaliacoes_30d_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Usuario
+        fields = [
+            "id",
+            "nome",
+            "email",
+            "tipo",
+            "is_active",
+            "last_login",
+            "data_criacao",
+            "password",
+            "especialidade",
+            "bio",
+            "alunos_count",
+            "treinos_count",
+            "avaliacoes_count",
+            "avaliacoes_30d_count",
+        ]
+        read_only_fields = [
+            "id",
+            "tipo",
+            "last_login",
+            "data_criacao",
+            "alunos_count",
+            "treinos_count",
+            "avaliacoes_count",
+            "avaliacoes_30d_count",
+        ]
+
+    def validate_email(self, value):
+        email = Usuario.objects.normalize_email(value).lower()
+        queryset = Usuario.objects.filter(email__iexact=email)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("Ja existe um usuario com este email.")
+        return email
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        profile_data = validated_data.pop("personal_profile", {})
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+
+        if profile_data:
+            profile, _ = PersonalProfile.objects.get_or_create(usuario=instance)
+            for attr, value in profile_data.items():
+                setattr(profile, attr, value)
+            profile.save()
+            instance._state.fields_cache.pop("personal_profile", None)
+
+        return instance
+
+
+class AdminAlunoUpdateSerializer(serializers.ModelSerializer):
+    usuario_id = serializers.UUIDField(source="usuario.id", read_only=True)
+    nome = serializers.CharField(source="usuario.nome", max_length=150)
+    email = serializers.EmailField(source="usuario.email")
+    tipo = serializers.CharField(source="usuario.tipo", read_only=True)
+    is_active = serializers.BooleanField(source="usuario.is_active", required=False)
+    personal_id = serializers.PrimaryKeyRelatedField(
+        queryset=Usuario.objects.filter(tipo=Usuario.Tipo.PERSONAL, is_active=True),
+        source="personal",
+        pk_field=serializers.UUIDField(format="hex_verbose"),
+        required=False,
+    )
+    personal_nome = serializers.CharField(source="personal.nome", read_only=True)
+
+    class Meta:
+        model = Aluno
+        fields = [
+            "id",
+            "usuario_id",
+            "nome",
+            "email",
+            "tipo",
+            "is_active",
+            "personal_id",
+            "personal_nome",
+            "data_nascimento",
+            "sexo",
+            "objetivo_principal",
+            "observacoes_medicas",
+        ]
+        read_only_fields = ["id", "usuario_id", "tipo", "personal_nome"]
+
+    def validate_email(self, value):
+        email = Usuario.objects.normalize_email(value).lower()
+        queryset = Usuario.objects.filter(email__iexact=email)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.usuario_id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ja existe um usuario com este email.")
+        return email
+
+    def validate_sexo(self, value):
+        if not self.instance or value == self.instance.sexo:
+            return value
+
+        try:
+            from apps.assessments.models import Avaliacao
+        except ImportError:
+            return value
+
+        if Avaliacao.objects.filter(aluno=self.instance).exists():
+            raise serializers.ValidationError(
+                "Sexo nao pode ser alterado apos o aluno possuir avaliacoes."
+            )
+        return value
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        usuario_data = validated_data.pop("usuario", {})
+
+        for attr, value in usuario_data.items():
+            setattr(instance.usuario, attr, value)
+        if usuario_data:
+            instance.usuario.save()
+
+        return super().update(instance, validated_data)
+
+
+class AdminDashboardSerializer(serializers.Serializer):
+    usuarios = serializers.DictField()
+    personais = serializers.DictField()
+    alunos = serializers.DictField()
+    exercicios = serializers.DictField()
+    treinos = serializers.DictField()
+    avaliacoes = serializers.DictField()
+
+
+class PersonalDashboardSerializer(serializers.Serializer):
+    alunos = serializers.DictField()
+    treinos = serializers.DictField()
+    avaliacoes = serializers.DictField()
+    ranking = serializers.ListField(child=serializers.DictField())
 
 
 class DetailResponseSerializer(serializers.Serializer):

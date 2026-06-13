@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 
-from apps.accounts.models import Aluno, Usuario
+from apps.accounts.models import Aluno, PersonalProfile, Usuario
 
 
 class UsuarioCreationForm(UserCreationForm):
@@ -50,3 +50,11 @@ class AlunoAdmin(admin.ModelAdmin):
     list_filter = ("sexo",)
     search_fields = ("usuario__nome", "usuario__email", "personal__nome", "personal__email")
     raw_id_fields = ("usuario", "personal")
+
+
+@admin.register(PersonalProfile)
+class PersonalProfileAdmin(admin.ModelAdmin):
+    list_display = ("usuario", "especialidade", "data_atualizacao")
+    search_fields = ("usuario__nome", "usuario__email", "especialidade")
+    raw_id_fields = ("usuario",)
+    readonly_fields = ("data_criacao", "data_atualizacao")

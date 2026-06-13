@@ -1,11 +1,14 @@
 import uuid
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
 from apps.accounts.models import Usuario
+from apps.assessments.application.calculadora import iac as calcular_iac
+from apps.assessments.application.calculadora import rcq as calcular_rcq
 
 
 class Avaliacao(models.Model):
@@ -34,10 +37,14 @@ class Avaliacao(models.Model):
     percentual_gordura = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     massa_gorda_kg = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     massa_magra_kg = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    imc = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    iac = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     rcq = models.DecimalField(max_digits=4, decimal_places=2, null=True, blank=True)
+    data_proxima_avaliacao = models.DateField(null=True, blank=True)
     feedback_personal = models.TextField(blank=True)
     ativo = models.BooleanField(default=True)
     data_criacao = models.DateTimeField(auto_now_add=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "avaliacao"
@@ -151,11 +158,16 @@ class AvaliacaoCircunferencias(AvaliacaoMetodoMixin):
     cintura_cm = models.DecimalField(max_digits=5, decimal_places=2)
     abdome_cm = models.DecimalField(max_digits=5, decimal_places=2)
     quadril_cm = models.DecimalField(max_digits=5, decimal_places=2)
-    braco_relaxado_cm = models.DecimalField(max_digits=5, decimal_places=2)
-    braco_contraido_cm = models.DecimalField(max_digits=5, decimal_places=2)
-    antebraco_cm = models.DecimalField(max_digits=5, decimal_places=2)
-    coxa_cm = models.DecimalField(max_digits=5, decimal_places=2)
-    panturrilha_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    braco_relaxado_esq_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    braco_relaxado_dir_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    braco_contraido_esq_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    braco_contraido_dir_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    antebraco_esq_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    antebraco_dir_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    coxa_esq_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    coxa_dir_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    panturrilha_esq_cm = models.DecimalField(max_digits=5, decimal_places=2)
+    panturrilha_dir_cm = models.DecimalField(max_digits=5, decimal_places=2)
 
     class Meta:
         db_table = "avaliacao_circunferencias"
@@ -165,8 +177,47 @@ class AvaliacaoCircunferencias(AvaliacaoMetodoMixin):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         if self.quadril_cm:
-            rcq = (self.cintura_cm / self.quadril_cm).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_HALF_UP,
+            Avaliacao.objects.filter(pk=self.avaliacao_id).update(
+                rcq=calcular_rcq(self.cintura_cm, self.quadril_cm),
+                iac=calcular_iac(self.quadril_cm, self.avaliacao.altura_cm),
             )
-            Avaliacao.objects.filter(pk=self.avaliacao_id).update(rcq=rcq)
+
+
+class Anamnese(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    aluno = models.ForeignKey(
+        "accounts.Aluno",
+        on_delete=models.CASCADE,
+        related_name="anamneses",
+    )
+    historico_familiar = models.TextField(blank=True)
+    doencas_preexistentes = models.TextField(blank=True)
+    lesoes = models.TextField(blank=True)
+    medicamentos = models.TextField(blank=True)
+    alergias = models.TextField(blank=True)
+    cirurgias = models.TextField(blank=True)
+    restricoes_exercicio = models.TextField(blank=True)
+    observacoes = models.TextField(blank=True)
+    ativo = models.BooleanField(default=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "anamnese"
+        ordering = ["-ativo", "-data_atualizacao"]
+        verbose_name = "anamnese"
+        verbose_name_plural = "anamneses"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["aluno"],
+                condition=Q(ativo=True),
+                name="anamnese_aluno_ativo_unique",
+            )
+        ]
+
+    def clean(self):
+        if self.aluno_id and self.aluno.personal.tipo != Usuario.Tipo.PERSONAL:
+            raise ValidationError({"aluno": "Aluno precisa estar vinculado a um personal."})
+
+    def __str__(self):
+        return f"Anamnese de {self.aluno}"
