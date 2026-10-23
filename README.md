@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/fitsync-logo-dark.svg">
+    <img alt="FitSync" src="docs/brand/fitsync-logo-light.svg" width="360">
+  </picture>
+</p>
+
 # FitSync API
 
 API Django REST para a plataforma FitSync, voltada para gestao de personais, alunos, treinos, avaliacoes fisicas e acompanhamento de evolucao.
